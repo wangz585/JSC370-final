@@ -1,0 +1,6 @@
+The USA election datasets we used are downloaded from: Harvard Dataverse
+(https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/42MVDX)
+
+Use some web scraping, see the the markdown file for the code.
+
+All data cleaning steps are included in the markdown files.

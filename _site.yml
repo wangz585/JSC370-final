@@ -1,0 +1,13 @@
+name: "Election Systems in the United States and India"
+output_dir: "docs"
+navbar:
+  title: "Election Systems in the United States and India"
+  left:
+    - text: "United States"
+      href: usa.html
+    - text: "India"
+      href: india.html
+    - text: "Compare and Contrast"
+      href: compare.html
+    - text: "JSC370 Course Website"
+      href: https://jsc370.github.io/jsc370-2023/

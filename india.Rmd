@@ -1,0 +1,844 @@
+---
+title: "Election in India"
+author: "Zhenyu Wang"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+---
+
+```{r, include=FALSE}
+# Table
+library(knitr)
+library(kableExtra)
+
+# Data Clean
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(dplyr)
+library(zoo)
+
+# Interative Plots
+library(plotly)
+library(knitr)
+library(widgetframe)
+
+# Hypothesis Test
+library(funtimes)
+
+# Cluster
+library(cluster)
+```
+
+## Introduction
+
+The Indian election is one of the largest democratic exercises in the world, with over 900 million eligible voters across the country. Compared to the United States, there seems to be less global interest and attention on Indian elections. However, this does not mean that we should overlook or underestimate the importance of Indian elections. India is the world's largest democracy, and its election outcomes have significant implications not only for the country but also for the global community. India is a rising economic and political power, and its policies on issues such as climate change, trade, and security have far-reaching consequences. Therefore, it is crucial to conduct investigations and analyses of Indian elections to better understand the country's political landscape and its impact on the world stage.
+
+In this stage of the report, we will dive into the intricacies of the Indian election system by explore analysis, which is one of the largest and most complex democratic systems in the world. And throughout the analysis on the election result, we will also look into its related social issues and features of different regions in India. To achieve a deeper understanding of this complex system, we will be leveraging machine learning algorithms to analyze data and uncover the underlying mechanisms of India's democratic process.
+
+Then, in the last stage of the report, we can compare and contrast democratic systems of 2 countries.
+
+```{r, include=FALSE}
+indian_state <- read.csv(
+  "~/Downloads/archive/indian-state-level-election.csv")
+
+indian_national <- read.csv(
+  "~/Downloads/archive/indian-national-level-election.csv")
+```
+
+```{r, eval = FALSE, include=FALSE}
+dim(indian_national)
+max(indian_state$year)
+length(unique(indian_national$year))
+indian_state %>%
+  select(year, st_name) %>%
+  unique()
+```
+
+```{r, echo=FALSE}
+myTable <- data.frame(Dataset = c("indian_state_election", "indian_national_election"),
+                      `Number of Rows` = c(327294, 73081),
+                      `Number of Columns` = c(11, 11), 
+                      `Year (Start)` = c(1977, 1977),
+                      `Year (End)` = c(2015, 2014),
+                      `Number of Elections` = c(202, 11))
+kable(myTable, "html", caption = "Table 1. Summary of the Indian Election Datasets") %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE)
+
+```
+Table 1 gives a summary on the datasets used in this analysis. The Indian election datasets we used are downloaded from [`Kaggle`](https://www.kaggle.com/datasets/awadhi123/indian-election-dataset?resource=download). There are 2 datasets, one for the national election (to elect the members of the [`Lok Sabha`](https://en.wikipedia.org/wiki/Lok_Sabha)), the other for [`Legislative Assembly by-elections`](https://en.wikipedia.org/wiki/List_of_Indian_state_legislative_assembly_elections) in different regions.
+
+In the datasets, we have 11 national election and 202 state level election during 1977~2015.
+
+More information about the datasets and the election systems will be uncovered in the following parts.
+
+## Data Prepare
+
+We want to go through each column in three datasets, including some political terms.
+
+```{r, echo=FALSE}
+myTable <- data.frame(Column = c("st_name", "ac_no, ac_name", "ac_type", "partyname, partyabbre"),
+                      Description = c("Name of State in India", "Name /Numeric Identifier of the Assembly Constituency", "Type of the Assembly Constituency", "Name / Abbreviation of the Political Party"))
+kable(myTable, "html", caption = "Table 2. Description of Columns in the Indian Election Datasets") %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE)
+```
+#### Aside: What is an AC (Assembly Constituency)?
+
+In India, an Assembly Constituency (AC) is a specific geographic area within a state in India, which is represented by a member in the state legislative assembly. ACs are demarcated based on the number of voters in a particular area and are represented by a Member of the Legislative Assembly (MLA) in state level election or  who is elected by the people of that constituency.
+
+One important thing to notice is Assembly Constituency boundaries can change over time due to various reasons such as population growth, demographic changes, and political considerations. The Election Commission of India periodically reviews and reorganizes the boundaries of ACs to ensure fair representation and balance of population. The frequency of such changes may vary depending on the region and other factors. In general, AC boundaries may change every 10 years after the Census data is released.
+
+Another thing is that assembly constituencies (AC) can differ for national level elections and state elections in India. This is because the boundaries of Assembly Constituencies are determined by the respective State Election Commissions, and can vary based on various factors such as population density, demographics, and geographical features. Therefore, it is not uncommon to have different ACs for national and state-level elections.
+
+These 2 features brought limitation to the future analysis because assembly constituencies are inconsistent. To overcome this, we measure the proportion of assembly constituencies instead of some explicit assembly constituencies.
+ 
+### Data Cleaning Procedures on Indian Election Datasets
+
+There are many unique features in Indian election, this requires some special efforts in data clean, and there are definitely trade-offs in the cleans. We list some procedures below.
+
+```{r, include=FALSE}
+indian_state$partyabbre_old <- indian_state$partyabbre
+indian_national$partyabbre_old <- indian_national$partyabbre
+
+indian_state$partyabbre <- apply(indian_state, 1, function(x) gsub("\\(.*?\\)", "", x["partyabbre"]))
+
+indian_state$partyabbre <- toupper(indian_state$partyabbre)
+
+indian_national$partyabbre <- apply(indian_national, 1, function(x) gsub("\\(.*?\\)", "", x["partyabbre"]))
+
+indian_national$partyabbre <- toupper(indian_national$partyabbre)
+indian_national$cand_sex <- ifelse(indian_national$cand_sex == "M", "M", "F")
+```
+
+```{r, include=FALSE}
+indian_state <- indian_state %>% 
+  subset(year != 2005.1)
+```
+
+
+```{r, include=FALSE}
+# Chandigarh, Chattisgarh, Chandigarh
+# Goa, Daman & Diu, Goa Daman & Diu
+# puducherry pondicherry
+# "National Capital Territory Of Delhi" "Nct Of Delhi", Delhi
+indian_state$st_name_old <- indian_state$st_name
+indian_state$st_name <- ifelse(indian_state$st_name == "Orissa", "Odisha", 
+                              ifelse(indian_state$st_name == "Chattisgarh",  "Chattisgarh", 
+                              ifelse(indian_state$st_name == "Delhi" | indian_state$st_name == "National Capital Territory Of Delhi", "Nct Of Delhi",
+                              ifelse(indian_state$st_name == "Pondicherry", "Puducherry" , ifelse(indian_state$st_name == "Goa, Daman & Diu", "Goa Daman & Diu", indian_state$st_name)))))
+
+indian_national$st_name_old <- indian_national$st_name
+indian_national$st_name <- ifelse(indian_national$st_name == "Orissa", "Odisha", 
+                              ifelse(indian_national$st_name == "Chattisgarh",  "Chhattisgarh", 
+                              ifelse(indian_national$st_name == "Delhi" | indian_national$st_name == "National Capital Territory Of Delhi", "Nct Of Delhi",
+                              ifelse(indian_national$st_name == "Pondicherry", "Puducherry" , ifelse(indian_national$st_name == "Goa, Daman & Diu", "Goa Daman & Diu", indian_national$st_name)))))
+```
+
+1. Splits of Parties
+
+For example, we have INC(I) and INC in the dataset, but refer to the same political party, the Indian National Congress. The difference is that INC(I) is used to differentiate between the Indian National Congress and its faction in the state of Tamil Nadu, which is known as the Indian National Congress (Indira). To ensure the consistency of the analysis, we treat every subdivision or splits of parties as their original parties. In R language, we do this through remove content inside the bracket by regex.
+
+2. Hung Parliament
+
+For example, there are 2 state level election in 2005 in Bihar. There was a fractured verdict in February 2005 Assembly Election, so another election was held in October 2005. This brought some challenges in the future analysis. Ideally, we want the election to be held periodically so that it is to obtain some patterns. And 2 data points in 2005 result in more weight on 2005's political situation if we want to apply any machine learning algorithm on it. Therefore, we remove the latter election such that political standing of the original situation is kept.
+
+
+3. Different Spellings of States
+
+There are some states have different 'name' but refer to the same place in the dataset.
+For example, we have Chattisgarh, Chhattisgarh, the latter one is the correct spelling. Different spellings may due to misspelling, official rename or abbreviation. Table 3 show how we correct the spellings in the dataset and we correct them. 
+
+```{r, echo=FALSE}
+myTable <- data.frame(States = c("Chhattisgarh", "Goa Daman & Diu", "Puducherry", "Nct Of Delhi", "Odisha"),
+                      Spellings = c("Chattisgarh", "Goa, Daman & Diu", "Pondicherry", "National Capital Territory Of Delhi, Delhi", "Orissa"))
+kable(myTable, "html", caption = "Table 3. Different Spellings of States") %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE)
+```
+
+## Data Exploration
+
+### Basic Investigation
+
+India is a vast and diverse country with a complicated election system as we can already see in the data explore stage. As a writer of this report, I am new to India and need to investigate basic questions before delving into more specific topics. 
+
+1. How many states are there in India?
+2. Does India have a two party system? How many political parties are there?
+3. How many voters participate in the elction? Does this number change with time?
+
+```{r, include=FALSE, warning=FALSE}
+number_of_states_national <- indian_national %>%
+  group_by(year) %>%
+  select(st_name) %>%
+  unique()
+
+states_count_by_year = number_of_states_national %>%
+  group_by(year) %>%
+  summarise(n = n())
+
+year_by_party_count <- indian_national %>% 
+  group_by(year, partyabbre) %>% 
+  summarize(party_votes = sum(totvotpoll))
+
+party_count <- year_by_party_count %>%
+  select(year, partyabbre) %>%
+  unique() %>%
+  group_by(year) %>%
+  summarise(n = n())
+
+year_total_count <- year_by_party_count %>% 
+  group_by(year) %>% 
+  summarize(total_votes = sum(party_votes))
+```
+
+
+```{r, echo=FALSE}
+ax <- list(
+  title = FALSE,
+  zeroline = FALSE,
+  showline = FALSE,
+  showticklabels = FALSE,
+  xaxis = list(range = c(1970,2020))
+)
+
+fig1 <- plot_ly(states_count_by_year, type = 'scatter', mode = 'lines') %>%
+  add_trace(x = ~year, y = ~n, name = 'Number of States') %>%
+  layout(legend=list(title=list(text='Count')), xaxis = ax, yaxis = list(title = 'State Count'), title = 'Figure 1. Dynamics of Elections from 1977 to 2014')
+
+fig2 <- plot_ly(party_count, type = 'scatter', mode = 'lines')%>%
+  add_trace(x = ~year, y = ~n, name = 'Number of Parties') %>%
+  layout(legend=list(title=list(text='Count')), xaxis = ax, yaxis = list(title = 'Party Count'))
+
+fig3 <- plot_ly(year_total_count, type = 'scatter', mode = 'lines') %>% 
+  add_trace(x = ~year, y = ~total_votes, name = 'Number of Voters') %>%
+  layout(legend=list(title=list(text='Count')), xaxis = list(title = 'Year'), yaxis = list(title = 'Voter Count'))
+
+fig <- subplot(fig1, fig2, fig3,
+               nrows = 3, titleY = TRUE, titleX = TRUE) %>% layout(
+                 xaxis = list(zerolinecolor = '#ffff',
+                              zerolinewidth = 2,
+                              gridcolor = 'ffff'),
+                 yaxis = list(zerolinecolor = '#ffff',
+                              zerolinewidth = 2,
+                              gridcolor = 'ffff'),
+                 plot_bgcolor='#e5ecf6')
+fig
+```
+
+From figure 1, we see that unlike the USA, India has a varying number of states till recent time. Partly is because of the dataset lacks some information, but there have been several other reorganizations. For example, we can see in the dataset that Goa Daman & Diu was splited into two states: Goa and Daman & Diu. After 2004, the number of states are stabilized to 35. Those reorganizations have brought more dynamics to Indian democratic system, therefore, we must perform more analysis to understand the geography of Indian politics before proceed.
+
+As for the number of parties, in 1977, only 35 parties particpated in the Lok Sabha, while in 2014, more than 400 parties participated. This illustrated the diversity of the country, which is home to multiple languages, religions, cultures, and social groups. Different regions in the country have different issues, and there is no single party that can represent all of them. Therefore, people tend to form their own parties to represent their local interests. We need to perform investigation to see if it is a two party system.
+
+Lastly, the growth of number of voters match growth of its population. Recently (2023), India just became the country with the most popularity in the world.
+
+### Multi Party System
+
+By some external source, we know that the two main political parties in India are the Bharatiya Janata Party (BJP) and the Indian National Congress (INC). BJP is a right-wing party which recently dominated the Lok Sabha with its alliance. INC is a center left party with huge popularity before.
+
+```{r, include=FALSE}
+accumulate_by <- function(dat, var) {
+  var <- lazyeval::f_eval(var, dat)
+  lvls <- plotly:::getLevels(var)
+  dats <- lapply(seq_along(lvls), function(x) {
+    cbind(dat[var %in% lvls[seq(1, x)], ], frame = lvls[[x]])
+  })
+  dplyr::bind_rows(dats)
+}
+```
+
+```{r, include=FALSE}
+year_by_party_count <- merge(year_by_party_count, year_total_count, by = c("year"))
+year_by_party_count$proportion <- year_by_party_count$party_votes / year_by_party_count$total_votes
+```
+
+```{r, include=FALSE}
+# INC, BJP
+two_major_parties <- year_by_party_count %>%
+  subset(partyabbre == "BJP" | partyabbre == "INC" & year >= 1984)
+two_major_parties<- two_major_parties %>% 
+  pivot_wider(names_from = partyabbre, values_from = proportion)
+
+two_major_parties <- two_major_parties %>% accumulate_by(~year)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+fig <- plot_ly(two_major_parties, x = ~year, y = ~BJP, frame = ~frame, name = 'BJP', mode = 'scatter', type = 'scatter') %>%
+  add_trace(x = ~year, y = ~INC, frame = ~frame, name = 'INC', mode = 'scatter', type = 'scatter') 
+
+
+fig <- fig %>% layout(
+  xaxis = list(
+    title = "Year",
+    zeroline = F
+  ),
+  yaxis = list(
+    title = "Proportion (Population)",
+    zeroline = F
+  ),
+  title = "Figure 2. Competition Between INC and BJP"
+) 
+
+fig <- fig %>% animation_slider(
+  hide = T
+)
+
+fig
+```
+
+From Figure 2, we can tell that the Indian National Congress (INC) being the dominant party until the 1990s. However, in recent years, the Bharatiya Janata Party (BJP) has emerged as a major contender, although this plot does not tell us the winner of election directly (because it is not determined by popularity vote). Notably, two parties often gained less than 50% of the popularity vote together. This implies India is not a two party system country. In the following part, we want to know where do other votes went to, does there a exist a third-party?
+
+
+```{r, include=FALSE}
+YEAR = 1998
+election_1977 <- year_by_party_count %>%
+  subset(year == YEAR)
+
+# Sort data frame by count in descending order
+election_1977 <- election_1977[order(-election_1977$party_votes),]
+
+# Cumulative Proportion
+election_1977$cum_prop <- cumsum(election_1977$party_votes) / sum(election_1977$party_votes)
+
+# Top_n
+election_1977 <- election_1977 %>%
+  subset(proportion > 0.01)
+
+election_1977$rank = seq_along(election_1977$party_votes)
+election_1977 <- election_1977 %>% accumulate_by(~rank)
+```
+
+```{r, echo=FALSE}
+fig <- plot_ly(election_1977, x = ~rank, y = ~cum_prop, frame = ~frame, name = 'Cumulative\nProportion', mode = 'lines', type = 'scatter') %>%
+  add_trace(x = ~rank,y = ~proportion, frame = ~frame, name = 'Single\nProportion', line = list(simplyfy = F), mode = 'lines', type = 'scatter') 
+
+fig <- fig %>% layout(
+  xaxis = list(
+    title = "Rank of the Party",
+    zeroline = F
+  ),
+  yaxis = list(
+    title = "Proportion",
+    zeroline = F
+  ),
+  title = "Figure 3. Cumulative Proportion of Voting Population in 1998"
+) 
+
+fig <- fig %>% animation_slider(
+  hide = T
+)
+
+fig
+```
+
+Figure 3 is a cumulative line plot that displays the cumulative sum of voting count over different parties (sorted by number of votes by each party) in 1998. In this plot, the y-axis represents the cumulative sum of the proportion of votes, while the x-axis represents the rank of the party. The blue line is the cumulative sum, and the yellow line is the proportion contributed by a single party. We chose 1998 since INC and BNP both contributed to 25% of votings, which is somewhat representative of the whole situation. 
+
+We can see the pattern is that two parties eat up 50%. The third party only gained 5% of total votes, which implies the big difference between other parties and 2 major parties. From the third party to the 16th party, each of them gained 1% ~ 5% of the votings. We filtered out parties that gained less than 1% of the popularity votes for better visualization. From here, we can conclude that India is is a multi-party system with 2 major parties and a diverse political landscape consisting of other national and regional political parties (at least till 2014). Other medium size parties (with more than 1% popularity votes) though cannot make a huge difference to the national-wide situation, but can still be important in its region or some specific issues.
+
+```{r, echo=FALSE, eval =FALSE}
+year_by_party_count %>%
+  subset(partyabbre != "INC" & partyabbre != "BJP" & proportion > 0.1)
+```
+
+```{r, echo=FALSE}
+myTable <- data.frame(Party = c("Bharatiya Lok Dal", "Janata Party", "Janata Dal party", "Janata Dal party"), 
+                      Year = c("1977", "1980", "1989", "1991"),
+                      `Voting Proportion` = c("0.413", "0.283", "0.178", "0.122"))
+kable(myTable, "html", caption = "Table 4. Influential Third Parties in the History") %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE)
+```
+Table 4 illustrated the parties that gained more than 10% of votes in national wide election from 1977. We can see that this could only happen before 1991 (before the growth of BJP), we would guess that those parties had similar spectrums with BJP, and probably replaced by BJP after 1991.
+
+### Geography in Indian Politics
+
+There are 2 levels of geographical level in Indian politics, states and assembly constituencies. From the previous investigation, we have already known both of them were changing with time. In this part, we want to know more about this dynamism.  
+
+#### Assembly Constituency
+
+```{r, include=FALSE, warning=FALSE}
+indian_national_district <- indian_national %>%
+  group_by(year, pc_name) %>%
+  summarize(n = sum(totvotpoll)) %>%
+  subset(n != 0)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+# create plotly boxplot
+plot_ly(indian_national_district, y = ~n, x = ~year, type = "box") %>% layout(
+  xaxis = list(
+    title = "Year",
+    zeroline = F
+  ),
+  yaxis = list(
+    title = "Voter Count",
+    zeroline = F
+  ),
+  title = "Figure 4. Evolution of the Assembly Constituency"
+) 
+```
+
+From figure 4, we can tell size of assembly constituencies in India has changed over time. The Delimitation Commission of India is responsible for periodically redrawing the boundaries of parliamentary and assembly constituencies to ensure that each constituency has approximately the same number of voters. However, we can see there are a lot outlier ACs, this could due to factors such as voting rate, population growth (between 10-year census), or changes in the demographic composition of the area. Also, we can tell median of number of voters grew with time, which is related to the growing population of this country. In 2014, each state is about 1 million voters on average.
+
+```{r, include=FALSE, warning=FALSE}
+state_summary <- indian_national %>%
+  select(year, st_name, pc_no, partyabbre, electors, totvotpoll) %>%
+  group_by(st_name, year) %>%
+  summarise(parties = n_distinct(partyabbre),
+            electors = sum(totvotpoll),
+            district = max(pc_no))
+```
+
+
+#### States
+
+```{r, echo=FALSE}
+fig <- plot_ly(state_summary, 
+               x = ~parties, 
+               y = ~district, 
+               frame = ~year, 
+               text = ~(paste("state:", st_name, "population: ", electors)), 
+               type = 'scatter', mode = 'markers', color = ~electors, colors = c("#2b2d42", "#8d99ae"),
+        marker = list(size = ~(log(electors)), opacity = 0.5))
+fig %>% layout(
+  xaxis = list(
+    title = "Number of Parties",
+    zeroline = F
+  ),
+  yaxis = list(
+    title = "Number of ACs",
+    zeroline = F
+  ),
+  title = "Figure 5. Dynamics of States in National Election"
+) 
+```
+Figure 5 is an interactive animation plot used to illustrate the dynamics of states in national elections. Each bubble represented a state, the size of the bubble correponded to the number of voters in the state (taking log). X-axis represented the number of parties participated in the election, y-axis represented the number of ACs in that state in that year. 
+
+We observe the movement of y-axis, those movements are very rare since they only happened when redrawed the boundaries. Horizontally, we see number of parties participated in the election changed with time, it has a positive correlation with the number of ACs too. By clicking on the bubbles, we see that there are some gaint states with many voters, ACs and large number of parties. From example, Uttar Pradesh, had more than 80 million voters in 2014, with 80 ACs (matched 1 million voters : 1 AC ratio). On the other hand, lots of states contained only 1 AC were in the left down corner of the animation all the time.
+
+#### Aside: State Reformation
+
+During the period from 1991 to 1996, there were some significant changes that took place in the Indian election districts. In 1992, the state of Bihar was divided into two states, namely, Bihar and Jharkhand. This led to the creation of several new constituencies in these states. In 1993, the state of Goa was also divided into two districts, North Goa and South Goa. In the same year, the National Capital Territory of Delhi was granted the status of a state, which led to the creation of several new constituencies in Delhi. In addition to this, there were several changes made to the boundaries of the existing districts and constituencies across the country, which had an impact on the way the elections were conducted in India. 
+
+#### Safe States & Battle States
+
+Safe states are those where a particular party has consistently won elections over the years, and where the voters have a strong loyalty towards that party. On the other hand, battle states are those where there is no clear winner and where the political scenario is more dynamic, with voters being more likely to switch their allegiance between parties. We want to see if Indian politics have these concepts and how often they happen.
+
+```{r, include=FALSE, warning=FALSE}
+# population votes in a state
+votes_by_state_party <- indian_national %>%
+  group_by(st_name, year, partyabbre) %>%
+  summarise(total_votes = sum(totvotpoll))
+```
+
+Given the dataset, we can only determine the winner of a state by 2 metrics. 
+
+1. If a party won the most population vote in a state.
+
+2. If a party won the most number of ACs in a state.
+
+We calculated the number of "turning points" (defined in part 1) of both metrics for all states. If a party have more turning points, it is a battle state, otherwise, it is a safe state for some parties.
+
+```{r, include=FALSE}
+num_turning_points <- function(year, result) {
+  order_result = result[order(year)]
+  prev = order_result[1]
+  turning_count = 0
+  for (i in 1:length(order_result)) {
+    # do something with vec[i]
+    if (order_result[i] != prev){
+      turning_count = turning_count + 1
+      prev = order_result[i]
+    }
+  }
+  return(turning_count)
+}
+```
+
+```{r, include=FALSE}
+winner_party_only <- votes_by_state_party %>%
+  group_by(st_name, year) %>%
+  slice(which.max(total_votes))
+
+num_turning_points_county <- winner_party_only %>%
+  group_by(st_name) %>%
+  summarize(num_turning_points = num_turning_points(year, partyabbre))
+```
+
+```{r, include=FALSE, eval = FALSE}
+plot_ly(x = ~num_turning_points_county$num_turning_points, type = "histogram", nbinsx = 10)
+```
+
+```{r, include=FALSE, warning=FALSE}
+# population votes in a state
+winner_party_only <- indian_national %>%
+  group_by(st_name, year, pc_name) %>%
+  slice(which.max(totvotpoll))
+
+major_party_in_state <- winner_party_only %>%
+  group_by(st_name, year, partyabbre) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  group_by(st_name, year) %>%
+  slice(which.max(count))
+
+num_turning_points_county_major_party <- major_party_in_state %>%
+  group_by(st_name) %>%
+  summarize(num_turning_points_by_district = num_turning_points(year, partyabbre))
+```
+
+```{r, include=FALSE, eval=FALSE}
+plot_ly(x = ~num_turning_points_county_major_party$num_turning_points_by_district, type = "histogram", nbinsx = 10)
+```
+
+```{r, include=FALSE}
+num_turning_points_total <- merge(num_turning_points_county, num_turning_points_county_major_party, by = "st_name")
+```
+
+```{r, echo=FALSE}
+fig <- plot_ly(data = num_turning_points_total, x = ~num_turning_points, y = ~num_turning_points_by_district)
+fig2 <- subplot(
+  
+  fig %>% add_markers(alpha = 0.6, text = "" , name = "Turning Points"),
+  
+  fig %>% add_histogram2d(colorscale = "Blues")
+  )
+
+fig2 %>% layout(
+  xaxis = list(
+    title = "Number of Turning Points (Population)",
+    zeroline = F
+  ),
+  yaxis = list(
+    title = "Number of Turning Points (AC count)",
+    zeroline = F
+  ),
+  title = "Figure 6. Number of Turning Points for States"
+) 
+```
+
+Figure 6 is a 2-dimenional histogram illustrated the distribution of number of turning points with two metrics. Firstly, we see most of the points located on the diagonal of the plot, which implies that two metrics are close to each other. Second, the safe states are rare. 4~5 turning points seems an average number of turning points for states in India. One popular argument to support this observation is that the Indian political landscape has traditionally been marked by a strong anti-incumbency sentiment, where voters tend to punish the ruling party for its perceived shortcomings and failures. This sentiment can result in frequent changes in power at the state and national level.
+
+```{r, include=FALSE}
+states_in_all_elect <- state_summary %>%
+  select(st_name, year) %>%
+  group_by(st_name) %>%
+  summarise(n = n()) %>%
+  subset(n >= 11) %>%
+  select(st_name)
+
+num_turning_points_total <- merge(states_in_all_elect, num_turning_points_total, by = "st_name")
+      
+num_turning_points_total %>%
+  subset(num_turning_points <= 2 | num_turning_points_by_district <= 2)
+
+num_turning_points_total %>%
+  subset(num_turning_points >= 7 | num_turning_points_by_district >= 7)
+```
+```{r, echo=FALSE}
+myTable <- data.frame(State = c("Gujarat", "Kerala", "Maharashtra", "Meghalaya", "West Bengal"), 
+                      `Number of Turning Points (Population)` = c("2", "0", "1", "1", "6"),
+                      `Number of Turning Points (AC counts)` = c("2", "2", "6", "2", "1"))
+kable(myTable, "html", caption = "Table 5. Safe States Candidates") %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE)
+```
+
+```{r, echo=FALSE}
+myTable <- data.frame(State = c("Arunachal Pradesh", "Haryana", "Punjab", "Rajasthan", "Uttar Pradesh"), 
+                      `Number of Turning Points (Population)` = c("7", "3", "7", "6", "7"),
+                      `Number of Turning Points (AC counts)` = c("6", "8", "8", "8", "5"))
+kable(myTable, "html", caption = "Table 6. Battle States Candidates") %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE)
+```
+Table 5 and 6 give us some candidates for battle and safe states. For example, Uttar Pradesh, the largest state as we mentioned before, is consistently changing their winning parties. In general, I would say the conception of "battle state", "safe state" is not suitable for Indian situation. The electoral dynamics in India are constantly changing, the influence of national-level political parties in state elections is limited, there are many political coalition in the some states, our metrics of turning points may not even apply in this case (for example, 2nd and 3rd parties are coalition, together they beat the biggest party). Maybe we want to come up with a way to detect such coalition as a next step.
+
+### Gender in Politics
+
+Gender issues in Indian politics have been a matter of concern for a long time. There are many report depicted that women are still underrepresented in political leadership positions in India. The dataset included the gender of candidates participated in the election. In this part, we will take advantage of the dataset to investigate weather female participation of politics increased throughout the years.
+
+```{r, include=FALSE, warning=FALSE}
+gender_national <- indian_national %>% 
+  group_by(st_name, year, cand_sex) %>% 
+  summarise(total_cand = n(),
+            total_votes = sum(totvotpoll))
+```
+
+```{r, include=FALSE}
+male_national <- gender_national %>%
+  subset(cand_sex == "M") %>%
+  select(c("st_name", "year", "total_cand", "total_votes"))
+female_national <- gender_national %>%
+  subset(cand_sex == "F") %>%
+  select(c("st_name", "year", "total_cand", "total_votes"))
+
+names(male_national) <- c("st_name", "year", "total_cand_m", "total_votes_m")
+names(female_national) <- c("st_name", "year", "total_cand_f", "total_votes_f")
+```
+
+```{r, include=FALSE}
+gender_national_new <- merge(male_national, female_national, by = c("st_name", "year"), all.x=TRUE, all.y=TRUE)
+gender_national_new <- replace(gender_national_new, is.na(gender_national_new), 0)
+gender_national_new$m_cand_proportion = gender_national_new$total_cand_m / (gender_national_new$total_cand_m + gender_national_new$total_cand_f)
+gender_national_new$m_vote_proportion = gender_national_new$total_votes_m / (gender_national_new$total_votes_f + gender_national_new$total_votes_m)
+```
+
+```{r, include=FALSE}
+fig1 <- plot_ly(
+  gender_national_new,
+  x = ~year,
+  y = ~st_name,
+  z = ~m_vote_proportion,
+  colors = "Greys",
+  type = "heatmap",
+  showscale = TRUE
+) |>
+  colorbar(title = "Proportion of\nVotes for\nMale Cand") %>% layout(
+  xaxis = list(
+    title = "Year",
+    zeroline = F
+  ),
+  yaxis = list(
+    title = "State",
+    zeroline = F
+  ),
+  title = "Figure 7.1 Proportion of Votes for Male Candidates"
+) 
+
+fig2 <- plot_ly(
+  gender_national_new,
+  x = ~year,
+  y = ~st_name,
+  z = ~m_cand_proportion,
+  colors = "Greys",
+  type = "heatmap",
+  showscale = TRUE
+) |>
+  colorbar(title = "Proportion\nof Male Cand") %>% layout(
+  xaxis = list(
+    title = "Year",
+    zeroline = F
+  ),
+  yaxis = list(
+    title = "State",
+    zeroline = F
+  ),
+  title = "Figure 7.2 Proportion of Male Candidates"
+) 
+```
+
+#### Proportion of Different Gender in the Elections {.tabset}
+
+##### Votes
+
+```{r, echo=FALSE}
+fig1
+```
+
+##### Candidates
+
+```{r, echo=FALSE}
+fig2
+```
+
+From two heatmaps, we see that most times men dominated elections in India in terms of the number of candidates the votes they got. Most heatmaps are filled with deep black, indicating a 90% plus of the candidates (votes) are men. However, we see that in 2014, there is a clear increase in women participation in the election (although still far away from balance number). To confirm if this hypothesis is correct, we conducted the Sieve-bootstrap Student's t-test for a linear trend for some states. For instance, we obtained p-value less than 0.05 in Bihar state, which indicated there is strong evidence there is increasing trend of female's participation in the election.
+
+```{r, include=FALSE}
+
+# Rajasthan, Bihar
+Bihar_gender <- gender_national_new %>%
+  subset(st_name == "Bihar")
+notrend_test(Bihar_gender$m_cand_proportion)
+```
+
+```{r, echo=FALSE}
+myTable <- data.frame(State = c("Rajasthan", "Bihar"), 
+                      Pvalue = c("0.003", "0.011"))
+kable(myTable, "html", caption = "Table 7. Linear Trend Testing for Proportion of Male Candidates") %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE)
+```
+
+### Understand the Complex System
+
+#### Classification Model (Failed)
+
+Indian elections are a complex and multifaceted process, with a range of factors influencing the outcomes. The changing geographical properties makes it hard to formulate the training data. The large number of political parties and the prevalence of multi-party coalitions complicate the picture. It is even hard to define meaning of "win" easily given the limited data recourse we have.
+
+Given these complexities, it is challenging to build accurate classification models to predict election outcomes with high levels of certainty. While data analysis and modeling can provide valuable insights into Indian politics, these insights should be viewed with caution and in the context of the unique and ever-changing nature of Indian elections.
+
+
+### Cluster
+
+Before predicting election result, we may need to understand this complex system more. We mentioned coalitions between parties in India as both major parties often cannot obtain more than 50% of votes. A nature way to figure out the coalitions in machine learning is cluster. In the next section, we will apply cluster to find states with similar voter structure and parties with close political spectrum.
+
+#### Similar States
+
+First of all, we want cluster states based of its voting results so that the states with similar voter structure can be clustered in the same group. We need to come up a vector to represent each state first. This is hard, because the voting result in each election is so diverse due to different numbers of parties and ACs. 
+
+One party kept reasonable amount of votes in throughout every election in every state is INC. Therefore, we decided to choose the voting proportion for INC party in each election as an element in the vector representing the state. The length of the vector is 11 which is the number of the national election, for the missing values, we apply median smoothing to reconstruct the value.
+
+```{r, include=FALSE, warning=FALSE}
+inc_porpotion_feat = indian_national %>%
+  subset(partyabbre == "INC") %>%
+  group_by(year, st_name) %>%
+  summarise(inc_voting_proportion = sum(totvotpoll) / sum(electors)) %>% 
+  pivot_wider(names_from = st_name, values_from = inc_voting_proportion) %>%
+  t() %>%
+  as.data.frame()
+colnames(inc_porpotion_feat)<- inc_porpotion_feat[1, ]
+inc_porpotion_feat <- inc_porpotion_feat[-1, ]
+```
+
+```{r, include=FALSE}
+row.has.na <- apply(inc_porpotion_feat, 1, function(x){sum(is.na(x)) > 2})
+inc_porpotion_feat_clean <- inc_porpotion_feat[!row.has.na,]
+#inc_porpotion_feat_clean
+df_filled <- na.aggregate(inc_porpotion_feat_clean, FUN = mean)
+```
+
+```{r, include=FALSE}
+dist.cosine = function(x){
+
+    # test if the input dataset is acceptable
+    if(is.matrix(x) == FALSE & is.data.frame(x) == FALSE) {
+        stop("cannot apply a distance measure: wrong data format!")
+    }
+    # then, test whether the number of rows and cols is >1
+    if(length(x[1,]) < 2 | length(x[,1]) < 2) {
+        stop("at least 2 cols and 2 rows are needed to compute a distance!")
+    }
+    
+    # to get Centered Cosine dist (=Pearson Correlation Coeff.), one needs 
+    # to normalize the feature vectors by subtracting the vector means
+    # x = t( t(x) - colMeans(x) )
+    
+    # this computes cosine dissimilarity; to have similarity, 1- applies
+    y = 1 - as.dist( x %*% t(x) / (sqrt(rowSums(x^2) %*% t(rowSums(x^2)))) ) 
+    # alternative way of approaching it:
+    # crossprod(x, y) / sqrt(crossprod(x) * crossprod(y))
+
+    return(y)
+}
+```
+
+After we formulate the vector representation. We apply hierarchical cluster algorithm with cosine distance measurement using `cluster` package in R. 
+
+```{r, echo=FALSE}
+hc <- hclust(dist.cosine(as.matrix(df_filled)), method = "complete")
+plot(hc)
+#  Kerala (1), West Bengal (1), and Tripura (1).
+# Gujarat (2), Maharashtra (2), and Tamil Nadu (1).
+
+# Dadra & Nagar Haveli, Jammu & Kashmir
+clusters <- cutree(hc, k = 5)
+# Cluster 1: States with a left-leaning political spectrum and a higher percentage of people living below the poverty line. This cluster may include states like Kerala, West Bengal, and Tripura.
+
+# Cluster 2: States with a right-leaning political spectrum and a higher GDP per capita. This cluster may include states like Gujarat, Maharashtra, and Tamil Nadu.
+```
+
+The cluserting result is not so good and is hard evaluate since my knowledge about Indian politics is limited. If we set number of groups to be 5, we can obtain some cluster groups like:
+
+  1. Tripura, West Bengal
+
+  2. Dadra & Nagar Haveli, Jammu & Kashmir, Manipur
+
+  3. Bihar, Tamil Nadu, Uttar Pradesh
+  
+In this case, group 1 is making sense as they are neighbor states and consistanly dominated by the left-wing party. However, group 2 and 3 were less verified at least from online search. They are quite different with each other. In my view, one big reason this approach failed is that voting proportion of INC cannot entirely represent the voter structure, in some region, parties with similar ideology of INC may gain votes from INC and mislead the results.
+
+```{r, include=FALSE}
+winner_party_only <- votes_by_state_party %>%
+  group_by(st_name, year) %>%
+  slice(which.max(total_votes))
+
+winner_party_only %>%
+  subset(st_name == "Tripura" | st_name == "West Bengal") %>%
+  pivot_wider(names_from = st_name, values_from = partyabbre)
+  
+```
+
+```{r, include=FALSE}
+winner_party_only <- votes_by_state_party %>%
+  group_by(st_name, year) %>%
+  slice(which.max(total_votes))
+
+winner_party_only %>%
+  subset(st_name == "Bihar" | st_name == "Tamil Nadu" | st_name == "Manipur") %>%
+  pivot_wider(names_from = st_name, values_from = partyabbre)
+```
+
+#### Party Coalition
+
+We can also apply the same algorithm but in a different direction. That is, we cluster parties based on their voting results in same geographic regions. The intuition behind this is that for two parties A and B, in regions X and Y. If A and B got higher votes in X (comparing to other states they participated), but got lower votes in Y, A and B are more likely to have similar positions in the political spectrum.
+
+We select the parties that participated elections in more than 20 states (other parties have too many missing values). And we calculate each party's vote proportion throughout all elections in each state(see code implementation for more details), this is an element for the feature vector for that party. Each party has a feature vector with the length of number of states. For missing value in the vector, we replace it with the minimum in the data matrix (since that party doesn't have any votes in that state, it is like a smoothing technique).
+
+```{r, include=FALSE}
+party_state_vote_count_local <- indian_state %>%
+  group_by(st_name, partyabbre) %>%
+  summarise(total_votes = sum(totvotpoll))
+```
+
+```{r, include=FALSE}
+party_state <- party_state_vote_count_local %>%
+  select(st_name, partyabbre) %>%
+  group_by(partyabbre) %>%
+  summarise(num_states = n()) %>%
+  subset(num_states > 20) %>%
+  select(partyabbre)
+```
+
+```{r, include=FALSE}
+state_total_vote <- party_state_vote_count_local %>%
+  group_by(st_name) %>%
+  summarise(state_total_votes = sum(total_votes))
+```
+
+```{r, include=FALSE}
+party_state_vote_count <- merge(state_total_vote, party_state_vote_count_local, by = "st_name")
+
+party_state_vote_count$proportion = party_state_vote_count$total_votes / party_state_vote_count$state_total_votes
+
+party_state_vote_count <- merge(party_state_vote_count, party_state, by = "partyabbre") %>%
+  select(partyabbre, st_name, proportion)
+```
+
+```{r, include=FALSE}
+party_state_vote_count <- party_state_vote_count %>% 
+  pivot_wider(names_from = st_name, values_from = proportion)
+replace_val <- as.numeric(min(as.matrix(party_state_vote_count), na.rm = TRUE))
+party_state_vote_count<- replace(party_state_vote_count, is.na(party_state_vote_count), replace_val)
+```
+
+```{r, include=FALSE}
+party_state_vote_count <- party_state_vote_count %>% column_to_rownames(., var = 'partyabbre')
+```
+After we formulate the vector representation. We apply hierarchical cluster algorithm with cosine distance measurement using `cluster` package in R. 
+
+```{r, echo=FALSE}
+hc <- hclust(dist.cosine(as.matrix(party_state_vote_count)), method = "complete")
+plot(hc)
+clusters <- cutree(hc, k = 5)
+```
+
+Surprisingly, some results we obtained are close to the real political spectrum (from manual data collection). Table 9 illustrated the results given group number equals 5.
+```{r, echo=FALSE}
+myTable <- data.frame(Party = c("BJP", "BSP", "CPI", "CPM", "INC", "JD", "LJP", "NCP", "RJD", "SHS", "SJP", "SP"), 
+                      `Spectrum (True)` = c("Right-wing", "Centre-left", "Far-left", "Left-wing", "Centre-left to centre", "Centre-right", "Centre-right", "Centre", "Centre-left", "Right-wing", "Right-wing", "Left-wing"), 
+                      `Cluster Group (k = 5)` = c("1", "2", "3", "3", "1", "4", "4", "5", 
+                      "4", "5", "4", "2"))
+kable(myTable, "html", caption = "Table 9. Evaluation of Political Party Cluster") %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = FALSE)
+```
+
+From the table, we can see that group 1 included BJP and INC, although they are not in the political spectrum, they are too outstanding, and both of them could have larger amount of votes than other parties in most of states. Group 2 contains 2 left wing parties, group 3 contains 2 left parties. Group 4 and 5 had some wrong clustering (if the online source is correct). But in general, this result is good and can be interpreted with reasonable amount of information.
+
+## Conclusion and Limitations
+
+There are many limitations in this report. I will list the most important ones. Firstly, we did not use the real election result in our data exploration partly because of its complexity, instead, we use more population votes to determine the winner of the election. Although population votes is one the most important measurements for the election, it does not imply the winner of the Lok Sabha (gaining more seats). Second, we do not include any map visualization in this part. This is due to some software limitation on my machine. Thirdly, because of the limited understanding of Indian political system, many of the terms, methodologies I applied were more suitable to the United States, but may not be useful in India (for example, battle states).
+
+Although there are so many limitations here, the report gave people a brief introduction to Indian political system, depicted some characteristics of the system, and brought up some innovative approach to undertstand the system. In the future, we may want to combine more recourses related to India to gain more profound understanding of this great country through its political system. Also, we can take adavantage the results of clustering of parties to obtain better results of clustering states iteratively.  

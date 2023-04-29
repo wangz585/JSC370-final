@@ -1,0 +1,23 @@
+---
+title: "Compare and Contrast"
+author: "Zhenyu Wang"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+---
+
+The United States of America and India are two of the largest democracies in the world, each with its own unique election system. The previous stages performed data analysis on two countries election datasets. In the last stage, we will compare and contrast two systems based on previous analysis.
+
+## Two Party vs. Multi Party
+
+In the United States, the political landscape is dominated by two major parties, the Democratic Party and the Republican Party. While there are smaller third parties, these two parties have consistently held a monopoly on political power. In contrast, India has a multi-party system with numerous political parties, many of them are influential locally. This has led to a highly fragmented political environment in India, where coalitions between multiple parties are often formed in order to secure a majority. The two-party system in the United States provides a clear choice between two major platforms, while the multi-party system in India can lead to a more diverse set of viewpoints and agendas represented in government. 
+
+On the other hand, third parties in India and the United States play a relatively minor role in their respective political systems comparing to two giant parties. In India, there are numerous regional and smaller parties that contest elections, but they rarely have a significant impact at the national level. These parties often align with either the ruling party or the opposition party, and their support can swing elections in favor of one or the other. In the United States, third parties such as the Libertarian Party and the Green Party have a small but dedicated following, but they face significant barriers to entry due to the country's winner-takes-all electoral system. Third-party candidates often struggle to gain access to televised debates or secure significant campaign funding, making it difficult for them to gain traction with voters. While third parties in both countries provide voters with alternatives to the dominant political parties, their impact on national politics remains limited.
+
+## Local Voting Patterns
+
+The local vote pattern in the United States is generally more stable than in India. In the US, local elections tend to be held separately from national elections, which helps to create a more distinct local political identity. Additionally, the two-party system in the US often leads to a more stable and predictable local voting pattern. In India, however, the lines between local and national politics are often blurred, and the multiparty system makes it difficult to predict voting patterns. These can be derived from `turning points` metric in two countries, where the most states in USA keep voting for the same party, but we hardly ever see this in India. The rise of regional parties in India has also contributed to the volatility of local politics. Overall, while local voting patterns in the US tend to be more stable, there are still significant variations between regions and states.
+
+## Election Size
+
+The size of elections in India and the USA varies significantly. India has a much larger population than the USA, which means that the number of voters in Indian elections is much higher. In the 2014 Lok Sabha election, there are over 500 million voters as we saw in the analysis. In contrast, we know the total population of the USA is still far away from 400 million even right now. The average number of voters in an assembly constituency is over 1 million in 2014 (there are more than 500 assembly constituencies), while the battle state, Iowa, in the United States had 1.6 million voters in 2020.

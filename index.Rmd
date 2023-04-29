@@ -1,0 +1,11 @@
+---
+title: "Election Systems in the United States and India"
+author: "Zhenyu Wang"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+---
+
+This website presents some data analysis on the election system in the United States and India. It contains 3 sections, analysis of the United States, analysis of India, and compare and contrast between them. You can click the above tabs to view them.
+
+This is Zhenyu Wang's JSC370 final project.
